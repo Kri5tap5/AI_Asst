@@ -14,6 +14,8 @@ load_dotenv()
 
 #You only need the openai api key if you need to create a new assistant
 openai.api_key = os.getenv("openai_API_key")
+thread_id = os.getenv("thread_id")
+assistant_id = os.getenv("assistant_id")
 
 OpenWeatherAPIkey = os.getenv("OpenWeatherAPIkey")
 NewsAPI_key = os.getenv("NewsAPI_key")
@@ -21,14 +23,12 @@ PolygonAPI_key = os.getenv("PolygonAPI_key")
 
 name_day_file_id = os.getenv("name_day_file_id")
 
-thread_id = os.getenv("thread_id")
-assistant_id = os.getenv("assistant_id")
-
 with open("tools.json", "r") as file:
     tools = json.load(file)
 
-#ONLY RUN ONCE AND WRITE DOWN THE OUTPUT!!!!
-assistant = openai.beta.assistants.update(#.create if you want to create a new assistant or are running the code for the first time
+#If running the code for the first time, comment out the assistant_id line and change the ...assistants.update() to assistants.create()
+#Run the create() command only once and remember to write down the assistant.id string. Later, place the assistant id in a .env file!
+assistant = openai.beta.assistants.update(
     assistant_id=assistant_id,
     name="MorningAssistant",
     instructions="You are a very talkative morning assistant with access to custom tools that return different responses based on what the user might want to know in the morning.",
@@ -37,9 +37,11 @@ assistant = openai.beta.assistants.update(#.create if you want to create a new a
 )
 print(f"Assistant Upadated with ID: {assistant.id}")
 
-#ONLY RUN ONCE AND WRITE DOWN THE OUTPUT!!!! Remember to write down the thread id and replace the thread_id variable value to the printed thread.id value
+#Run the next two lines of code only when running the code for the first time. After that, write down the thread.id string and place it in a .env file
 # thread = openai.beta.threads.create()
 # print(f"Thread created with ID: {thread.id}")
+
+#Checks for already active and unfinished runs
 def check_for_active_run(thread_id):
     runs = openai.beta.threads.runs.list(thread_id=thread_id)
     for run in runs.data:
@@ -51,10 +53,6 @@ def check_for_active_run(thread_id):
 
 #Returns precise coordinates of a city mentioned
 def coordinates_city(city, OpenWeatherAPIkey):
-    params = {
-        "apiKey": OpenWeatherAPIkey, # key for the API connection
-        "city": city      # e.g., 'Riga', 'London'
-    }
     url = f'https://api.openweathermap.org/geo/1.0/direct?q={city}&limit={2}&appid={OpenWeatherAPIkey}'
     response = requests.get(url)
     if response.status_code==200:
@@ -67,13 +65,8 @@ def coordinates_city(city, OpenWeatherAPIkey):
         return None, None
 
 #Returns the current weather for set coordinates
-def current_weather(latitude, longitude, OpenWeatherAPIkey):
+def current_weather(city, OpenWeatherAPIkey):
     latitude, longitude = coordinates_city(city, OpenWeatherAPIkey)
-    params = {
-        "apiKey": OpenWeatherAPIkey, # key for the API connection
-        "latitude": latitude,
-        "longitude": longitude
-    }
     cardinal_directions = ['N', 'N/NE', 'NE', 'E/NE', 'E', 'E/SE', 'SE', 'S/SE', 'S', 'S/SW', 'SW', 'W/SW', 'W', 'W/NW', 'NW', 'N/NW']
     url = f'https://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&units=metric&appid={OpenWeatherAPIkey}'
     response = requests.get(url)
@@ -90,16 +83,14 @@ def current_weather(latitude, longitude, OpenWeatherAPIkey):
         wind_direction = cardinal_directions[ix]
 
         print(f'Current temperature is {current_temperature} °C and the weather is {str(current_weather_pred)}. Wind is blowing {wind_direction} with {str(wind_speed)} m/s. \n')
-        output = f'Current temperature is {str(current_temperature)} °Celcius and the weather is {str(current_weather_pred)}. Wind is blowing {wind_direction} with {str(wind_speed)} m/s. Humidity: {humidity} \n\n'
+        output = f'Current temperature is {str(current_temperature)} °Celsius and the weather is {str(current_weather_pred)}. Wind is blowing {wind_direction} with {str(wind_speed)} m/s. Humidity: {humidity} \n\n'
         return output
     else:
         print("API connection Failed!")
+        return None
 
-#Returns fact of the day OR a random fact bassed on user input
+#Returns a fact of the Day(today) OR a Random(random) fact based on user input
 def random_fact(fact_type):
-    params = {
-        "fact_type": fact_type      # e.g., 'Day' or 'Random'
-    }
     print(f'Fact type func: {fact_type}')
     url = f"https://uselessfacts.jsph.pl/api/v2/facts/{fact_type}?language=en"
     response = requests.get(url)
@@ -111,8 +102,8 @@ def random_fact(fact_type):
         print("API connection Failed!")
         return None
 
-#Returns news which the user wants to know about
-def world_news(country, category, query, NewsAPI_key ):
+#Returns top news articles which the user might want to know about ¯\(°_o)/¯
+def world_news(country, category, query, NewsAPI_key):
     base_url = "https://newsapi.org/v2/top-headlines"
     params = {
         "apiKey": NewsAPI_key,
@@ -121,7 +112,6 @@ def world_news(country, category, query, NewsAPI_key ):
         "q": query               # Search query term (e.g., 'elections')
     }
     print("world_news() parameters: ", params)
-
     response = requests.get(base_url, params=params)
     if response.status_code == 200:
         data = response.json()
@@ -140,10 +130,10 @@ def world_news(country, category, query, NewsAPI_key ):
     else:
         print("API connection Failed!")
         return None
-
+#Returns the stock value of a stock(ticker) chosen
 def stocks_yesterday(ticker, PolygonAPI_key):
-    #unix time that needs to be revinded to previous day in order for the API to work (FREE plan restriction)
-    unix_time_1d1h = 88000000
+    #unix time that needs to be wound back to previous day in order for the API to work (FREE plan restriction)
+    unix_time_1d1h = 88000000 #Unix time in ms
     unix_time_1d = unix_time_1d1h - 3600000
 
     #Current unix time
@@ -170,30 +160,31 @@ def stocks_yesterday(ticker, PolygonAPI_key):
         print("API connection Failed!")
         return None
 
+#Creates an SQL database table to keep stock purchase prices and compare them to current stock prices
 def create_stocks_table():
     conn = sqlite3.connect('Assistant.db')
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS stocks (id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL, purchase_price REAL NOT NULL)")
-
+    # Could be able to add a date to the table and call the stock value function for that date. Date would need to be converted to unix time
     #            purchase_date DATE DEFAULT CURRENT DATE
     #            purchase_date_epoch INTEGER NOT NULL
     print('A new table "stocks" has been created')
     conn.commit()
     conn.close()
 
+#Returns the stock(ticker) purchase value which is stored in the database
 def get_purchase_price(ticker):
-    print('get_purchase_price entered!')
     if check_stocks_table() == True:
         conn = sqlite3.connect('Assistant.db')
         cursor = conn.cursor()
         cursor.execute('SELECT purchase_price FROM stocks WHERE ticker = ?', (ticker,))
-
         result = cursor.fetchone()
         conn.close()
         return result[0] if result else None
     else:
         return None
 
+#Adds the purchase price of a stock to the database
 def add_purchase_price(ticker, price):
     print(f'Adding a new purchase price for {ticker}')
     conn = sqlite3.connect('Assistant.db')
@@ -202,18 +193,20 @@ def add_purchase_price(ticker, price):
     conn.commit()
     conn.close()
 
+#Calculates the increase or decrease in stock value since purchase
 def calculate_increase(current_price, purchase_price):
     print('Calculating increase...')
     result = round((((current_price - purchase_price) / purchase_price) * 100), 3)
 
     if result > 0:
-        output = f'Your stock value has increased and is at {result} % of its original value!'
+        output = f'Your stock value has increased by {result} % of its original value!'
     elif result == 0:
         output = f'Your stock value has not increased nor decreased!'
     else:
-        output = f'Your stock value has decreased and is at {result}% of its original % value!'
+        output = f'Your stock value has decreased by {result}% of its original % value!'
     return output
 
+#Checks if the stocks table even exists, if not, calls function to create it
 def check_stocks_table():
     print('Checking if "stocks" table has entries...')
     conn = sqlite3.connect("Assistant.db")
@@ -229,28 +222,30 @@ def check_stocks_table():
         print('No such table "stocks". Creating it...')
         create_stocks_table()
 
+#Main function for stock value comparison which is included in assistant tools
 def compare_stock_values(ticker, purchase_price):
     output, current_price = stocks_yesterday(ticker, PolygonAPI_key)
     if purchase_price is None:
         print("Assistant failed to get purchase_price from user, checking if it's stored in the database")
         purchase_price = get_purchase_price(ticker)
         if purchase_price is None:
+            print("purchase_price was not found in the database, asking user for input")
             purchase_price_input = float(input(f"What was your purchase price for {ticker}? Please input only float values"))
             add_purchase_price(ticker, purchase_price_input)
             purchase_price = purchase_price_input
 
             increase_percentage = calculate_increase(current_price, purchase_price)
-            output = f'The current price for {ticker} is {current_price}. You bought this stock at a value of {purchase_price}' + increase_percentage
+            output = f'The current price for {ticker} is {current_price}. You bought this stock at a value of {purchase_price} ' + increase_percentage
         else:
             increase_percentage = calculate_increase(current_price, purchase_price)
-            output = f'The current price for {ticker} is {current_price}. You bought this stock at a value of {purchase_price}' + increase_percentage
+            output = f'The current price for {ticker} is {current_price}. You bought this stock at a value of {purchase_price} ' + increase_percentage
     else:
         increase_percentage = calculate_increase(current_price, purchase_price)
-        output = f'The current price for {ticker} is {current_price}. You bought this stock at a value of {purchase_price}' + increase_percentage
+        output = f'The current price for {ticker} is {current_price}. You bought this stock at a value of {purchase_price} ' + increase_percentage
     return output
 
-def varda_dienas(name_day_file_id):
-    print('Entering varda_dienas')
+#If needed, creates a local database of name days. name_day_file_id should be put in a .env file
+def get_name_days(name_day_file_id):
     # Connect to the DB. If none exists, it will be created
     conn = sqlite3.connect("Assistant.db")
     cursor = conn.cursor()
@@ -265,9 +260,8 @@ def varda_dienas(name_day_file_id):
     conn.commit()
     cursor.execute("SELECT COUNT(*) FROM name_days")
     row_count = cursor.fetchone()[0]
-    print('Row count variable: ' + str(row_count))
     if row_count > 0:
-            print('Table has entries, skipping creation')
+        print('Table has entries, skipping creation')
     else:
         print('Table has no entries, creating table')
         url = f'https://drive.google.com/uc?export=download&id={name_day_file_id}'
@@ -278,7 +272,6 @@ def varda_dienas(name_day_file_id):
             for date, names in name_days.items():
                 for name in names:
                     cursor.execute("INSERT INTO name_days (date, name) VALUES (?, ?)", (date, name))#'?, ?' prevents insertion attacks
-        # Commit the changes
         conn.commit()
     conn.close()
 
@@ -289,14 +282,9 @@ def name_days_of_today():
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (table_name,))
     result = cursor.fetchone()
     if result is not None:
-            print('Table exists, but may be empty')
-            cursor.execute(f"SELECT * FROM name_days WHERE date LIKE '{1}-{1}'")
-            rows = cursor.fetchall()
-            names = [row[1] for row in rows]
-            if len(names) >= 1:
-                print('Array has values: ' + ", ".join(map(str, names)))
+            print('Table exists, but may be empty')#This segment is meant for easy troubleshooting
     else:
-        varda_dienas(name_day_file_id)
+        get_name_days(name_day_file_id)
 
     month = time.strftime("%m")#Need to find a way to add dynamic dates, not only today
     date = time.strftime("%d")
@@ -309,17 +297,18 @@ def name_days_of_today():
     return output
 
 #Checks if there is an active run. If there is, a new query is not generated
-if check_for_active_run(thread_id) == None:
-    run_status, run_id = check_for_active_run(thread_id)
+run_status, run_id = check_for_active_run(thread_id)
+
+if run_id is not None:
     print("Active run found, finishing it!")
     run = openai.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
 else:#Message that the user will answer to
     message = openai.beta.threads.messages.create(
         thread_id=thread_id,
-        role="user",
+        role="user",#Unsure what this value needs to be "user" or "assistant"
         content=input("What would you like to know today?")
 )
-    #Runs the assistant with message given above
+    #Runs the assistant with message input given above
     run = openai.beta.threads.runs.create(
         thread_id=thread_id,
         assistant_id=assistant_id
@@ -359,8 +348,8 @@ if run.status == "requires_action":
             if tool_call.function.name == "current_weather": #Flow for the current_weather() function
                 print("current_weather called")
                 city = tool_params.get('city')
-                latitude, longitude = coordinates_city(city, OpenWeatherAPIkey)
-                output = current_weather(latitude, longitude, OpenWeatherAPIkey)
+                #latitude, longitude = coordinates_city(city, OpenWeatherAPIkey)
+                output = current_weather(city, OpenWeatherAPIkey)
 
             elif tool_call.function.name == "random_fact": #Flow for the random_fact() function
                 fact_type = tool_params.get('fact_type')
@@ -440,6 +429,7 @@ elif run.status == "failed":
 else:
     print(f"Unexpected run status: {run.status}")
 
+#Could use openAI text to speech module
 # response_tts = openai.audio.speech.create(
 #     model="tts-1",
 #     voice="alloy",
@@ -449,7 +439,10 @@ else:
 # response_tts.stream_to_file("output.mp3")
 
 # Converts the final answer from the assistant into TTS which is automatically played after receiving an answer.
-text = (final_answer)
-tts = gTTS(text)
-tts.save("output.mp3")
-Audio("output.mp3", autoplay = True)
+if final_answer:
+    text = (final_answer)
+    tts = gTTS(text)
+    tts.save("output.mp3")
+    Audio("output.mp3", autoplay = True)
+else:
+    print('Unable to speak, because final_answer was not received')
