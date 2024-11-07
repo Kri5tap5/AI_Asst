@@ -24,113 +24,8 @@ name_day_file_id = os.getenv("name_day_file_id")
 thread_id = os.getenv("thread_id")
 assistant_id = os.getenv("assistant_id")
 
-tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "world_news",
-            "description": "Use this function if the user wants to hear the latest news articles.",
-            "parameters": {
-                "type": "object",
-                "properties":{
-                    "country": {"type": "string", "description": "The name of a country based on the Alpha-2 codes"}, # e.g., 'us' for the United States
-                    "category": {"type": "string", "description": "The category of the query the user wants to search"},   #e.g. 'tech', 'medicine', etc.
-                    "q": {"type": "string", "description": "query of the user, for example 'gamestop price'."}   # user's query
-                },
-                "required": ["country"]
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "current_weather",
-            "description": "This function returns the weather of a location specified by the user IF the coordinates of the city are specified",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "city": {"type": "string", "description": "The city of witch the user wants to know the weather of"}
-                },
-                "required": ["city"],
-                "strict": "True"
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "random_fact",
-            "description": "Call this function if the user wants to hear a RANDOM fact or a fact of the DAY. If the user mentions the word 'day' or 'today' tell him a fact of the day. If the user mentions 'random' tell him a random fact,  Returns a random fact or a fact of the day based on user request",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "fact_type": {"type": "string", "description": "The type of fact the user want to hear. Either 'day' or 'random'."}
-                },
-                "required": ["fact_type"],
-                "strict" : "True"
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "coordinates_city",
-            "description": "Returns the longitude and latitude coordinates of a city mentioned.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "city": {"type": "string", "description": "The name of a city"}
-                },
-                "required": ["city"],
-                "strict" : "True"
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "stocks_yesterday",
-            "description": "Returns the stock value of a mentioned stock(ticker)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ticker": {"type": "string", "description": "The 'ticker' value of a stock. For example AAPL for Apple and AMZN for Amazon"}
-                },
-                "required": ["ticker"],
-                "strict" : "True"
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "name_days_of_today",
-            "description": "Returns the names of people who are celebrating their name day today",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "compare_stock_values",
-            "description": "Helps you compare the users purchased stock values to the values of these stocks today.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ticker": {"type": "string","description": "The 'ticker' value of a stock. For example AAPL for Apple and AMZN for Amazon"},
-                    "stock_purchase_value": {"type": "string","description": "The value at witch the user bought the stock. If the user does not provide one, apply the value None. This value is not mandatory"}
-                },
-                "required": ["ticker"],
-                "strict": "False"
-            }
-        }
-    }
-]
-
+with open("tools.json", "r") as file:
+    tools = json.load(file)
 
 #ONLY RUN ONCE AND WRITE DOWN THE OUTPUT!!!!
 assistant = openai.beta.assistants.update(#.create if you want to create a new assistant or are running the code for the first time
@@ -145,15 +40,14 @@ print(f"Assistant Upadated with ID: {assistant.id}")
 #ONLY RUN ONCE AND WRITE DOWN THE OUTPUT!!!! Remember to write down the thread id and replace the thread_id variable value to the printed thread.id value
 # thread = openai.beta.threads.create()
 # print(f"Thread created with ID: {thread.id}")
-
 def check_for_active_run(thread_id):
     runs = openai.beta.threads.runs.list(thread_id=thread_id)
     for run in runs.data:
         if run.status in ["active", "requires_action"]:
             print(f"Active run found: {run.id} with status {run.status}")
-            return run.status  #If an active run is found, the code will complete it
+            return run.status, run.id  #If an active run is found, the code will complete it
 
-    return False  #If no active run is found, a new one will be created
+    return None, None #If no active run is found, a new one will be created
 
 #Returns precise coordinates of a city mentioned
 def coordinates_city(city, OpenWeatherAPIkey):
@@ -195,8 +89,8 @@ def current_weather(latitude, longitude, OpenWeatherAPIkey):
         ix = round(wind_direction_deg/22.5)
         wind_direction = cardinal_directions[ix]
 
-        print(f'Current temperature is {current_temperature} °C and the weather is {str(current_weather_pred)}. Wind is blowing {wind_direction} with {str(wind_speed)} m/s \n')
-        output = f'Current temperature is {str(current_temperature)} °Celciuss and the weather is {str(current_weather_pred)}. Wind is blowing {wind_direction} with {str(wind_speed)} m/s \n\n'
+        print(f'Current temperature is {current_temperature} °C and the weather is {str(current_weather_pred)}. Wind is blowing {wind_direction} with {str(wind_speed)} m/s. \n')
+        output = f'Current temperature is {str(current_temperature)} °Celcius and the weather is {str(current_weather_pred)}. Wind is blowing {wind_direction} with {str(wind_speed)} m/s. Humidity: {humidity} \n\n'
         return output
     else:
         print("API connection Failed!")
@@ -415,8 +309,10 @@ def name_days_of_today():
     return output
 
 #Checks if there is an active run. If there is, a new query is not generated
-if check_for_active_run(thread_id) == True:
+if check_for_active_run(thread_id) == None:
+    run_status, run_id = check_for_active_run(thread_id)
     print("Active run found, finishing it!")
+    run = openai.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
 else:#Message that the user will answer to
     message = openai.beta.threads.messages.create(
         thread_id=thread_id,
