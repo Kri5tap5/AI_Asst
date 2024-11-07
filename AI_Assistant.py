@@ -193,6 +193,28 @@ def add_purchase_price(ticker, price):
     conn.commit()
     conn.close()
 
+#Deletes purchase price for a stock(ticker) if the user sold this stock
+def delete_purchase_price(ticker):
+    conn = sqlite3.connect('Assistant.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM stocks WHERE ticker = ?', (ticker,))
+    print(f'Deleting purchase price for {ticker}...')
+    conn.commit()
+    conn.close()
+    output = f'Stock ticker "{ticker}" has been removed from the database'
+    return output
+
+#Updates purchase price of a stock(ticker) if the user sold and bought again or just bought more
+def update_purchase_price(ticker, purchase_price):
+    conn = sqlite3.connect('Assistant.db')
+    cursor = conn.cursor()
+    cursor.execute('UPDATE stocks SET purchase_price = ? WHERE ticker = ?', (purchase_price, ticker))
+    print(f'Updating purchase price for {ticker}...')
+    conn.commit()
+    conn.close()
+    output = f'Stock purchase price for {ticker} has been updated! Do you want to see you stock value in% now?'
+    return output
+
 #Calculates the increase or decrease in stock value since purchase
 def calculate_increase(current_price, purchase_price):
     print('Calculating increase...')
@@ -385,6 +407,17 @@ if run.status == "requires_action":
                     purchase_price = None
                 print(f"compare_stock_values called, ticker: {ticker}, stock_purchase_value: {purchase_price}")
                 output = compare_stock_values(ticker, purchase_price)
+
+            elif tool_call.function.name == "update_purchase_price":
+                ticker = tool_params.get('ticker')
+                purchase_price = tool_params.get('stock_purchase_value')
+                print(f"update_purchase_price called, ticker: {ticker}")
+                output = update_purchase_price(ticker, purchase_price)
+
+            elif tool_call.function.name == "delete_purchase_price":
+                ticker = tool_params.get('ticker')
+                print(f"delete_purchase_price called, ticker: {ticker}")
+                output = delete_purchase_price(ticker)
 
             else:
                 print("Unknown function call")

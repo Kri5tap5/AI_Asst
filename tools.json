@@ -35,7 +35,7 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "fact_type": {"type": "string", "description": "The type of fact the user want to hear. Either 'day' or 'random'."}
+          "fact_type": {"type": "string", "description": "The type of fact the user want to hear. Either 'today' or 'random'."}
         },
         "required": ["fact_type"],
         "strict" : "True"
@@ -93,6 +93,35 @@
         },
         "required": ["ticker"],
         "strict": "False"
+      }
+    }
+  },
+  {"type": "function",
+    "function": {
+      "name": "delete_purchase_price",
+      "description": "Call this function if the user wants to erase his original stock ticker purchase value from the database",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {"type": "string","description": "The 'ticker' value of a stock. For example AAPL for Apple and AMZN for Amazon"}
+        },
+        "required": ["ticker"],
+        "strict" : "True"
+      }
+    }
+  },
+  {"type": "function",
+    "function": {
+      "name": "update_purchase_price",
+      "description": "Call this function if the user wants to update his original stock ticker purchase value in the database",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ticker": {"type": "string","description": "The 'ticker' value of a stock. For example AAPL for Apple and AMZN for Amazon"},
+           "stock_purchase_value": {"type": "string","description": "The value at witch the user actually bought the stock. This value is mandatory"}
+        },
+        "required": ["ticker", "stock_purchase_value"],
+        "strict" : "True"
       }
     }
   }
