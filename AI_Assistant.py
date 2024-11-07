@@ -1,6 +1,7 @@
 import os
 import requests
 import openai
+from babel.dates import date_
 from dotenv import load_dotenv
 from gtts import gTTS
 from IPython.display import Audio
@@ -12,6 +13,7 @@ import sqlite3
 load_dotenv()
 
 #You only need the openai api key if you need to create a new assistant
+openai.api_key = os.getenv("openai_API_key")
 
 OpenWeatherAPIkey = os.getenv("OpenWeatherAPIkey")
 NewsAPI_key = os.getenv("NewsAPI_key")
@@ -110,6 +112,22 @@ tools = [
                 "required": []
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compare_stock_values",
+            "description": "Helps you compare the users purchased stock values to the values of these stocks today.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ticker": {"type": "string","description": "The 'ticker' value of a stock. For example AAPL for Apple and AMZN for Amazon"},
+                    "stock_purchase_value": {"type": "string","description": "The value at witch the user bought the stock. If the user does not provide one, apply the value None. This value is not mandatory"}
+                },
+                "required": ["ticker"],
+                "strict": "False"
+            }
+        }
     }
 ]
 
@@ -133,7 +151,7 @@ def check_for_active_run(thread_id):
     for run in runs.data:
         if run.status in ["active", "requires_action"]:
             print(f"Active run found: {run.id} with status {run.status}")
-            return True  #If an active run is found, the code will complete it
+            return run.status  #If an active run is found, the code will complete it
 
     return False  #If no active run is found, a new one will be created
 
@@ -230,7 +248,7 @@ def world_news(country, category, query, NewsAPI_key ):
         return None
 
 def stocks_yesterday(ticker, PolygonAPI_key):
-    #unix time that needs to be rewinded to previous day in order for the API to work (FREE plan restriction)
+    #unix time that needs to be revinded to previous day in order for the API to work (FREE plan restriction)
     unix_time_1d1h = 88000000
     unix_time_1d = unix_time_1d1h - 3600000
 
@@ -248,12 +266,12 @@ def stocks_yesterday(ticker, PolygonAPI_key):
     if response.status_code==200:
         data = response.json()
         if data['resultsCount'] == 0:
-            output = f"No data found for the specified parameters. Maybe the ticker ({ticker}) is incorrect for the companny you are trying to search"
+            output = f"No data found for the specified parameters. Maybe the ticker ({ticker}) is incorrect for the company you are trying to search"
             return output
         else:
-            close_price = data['results'][0]['c']
-            output = f'Yesterday\'s closing price for {ticker} was {close_price}'
-            return output
+            close_price = float(data['results'][0]['c'])
+            output = f'Yesterdays closing price for {ticker} was {close_price}'
+            return output, close_price
     else:
         print("API connection Failed!")
         return None
@@ -261,20 +279,86 @@ def stocks_yesterday(ticker, PolygonAPI_key):
 def create_stocks_table():
     conn = sqlite3.connect('Assistant.db')
     cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS stocks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticker TEXT NOT NULL,
-            purchase_price REAL NOT NULL,
-            purchase_date DATE DEFAULT CURRENT_DATE
-        )
-    ''')
+    cursor.execute("CREATE TABLE IF NOT EXISTS stocks (id INTEGER PRIMARY KEY AUTOINCREMENT, ticker TEXT NOT NULL, purchase_price REAL NOT NULL)")
+
+    #            purchase_date DATE DEFAULT CURRENT DATE
+    #            purchase_date_epoch INTEGER NOT NULL
+    print('A new table "stocks" has been created')
     conn.commit()
     conn.close()
 
+def get_purchase_price(ticker):
+    print('get_purchase_price entered!')
+    if check_stocks_table() == True:
+        conn = sqlite3.connect('Assistant.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT purchase_price FROM stocks WHERE ticker = ?', (ticker,))
+
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else None
+    else:
+        return None
+
+def add_purchase_price(ticker, price):
+    print(f'Adding a new purchase price for {ticker}')
+    conn = sqlite3.connect('Assistant.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO stocks (ticker, purchase_price) VALUES (?, ?)', (ticker, price))
+    conn.commit()
+    conn.close()
+
+def calculate_increase(current_price, purchase_price):
+    print('Calculating increase...')
+    result = round((((current_price - purchase_price) / purchase_price) * 100), 3)
+
+    if result > 0:
+        output = f'Your stock value has increased and is at {result} % of its original value!'
+    elif result == 0:
+        output = f'Your stock value has not increased nor decreased!'
+    else:
+        output = f'Your stock value has decreased and is at {result}% of its original % value!'
+    return output
+
+def check_stocks_table():
+    print('Checking if "stocks" table has entries...')
+    conn = sqlite3.connect("Assistant.db")
+    cursor = conn.cursor()
+    table_name = 'stocks'
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (table_name,))
+    result = cursor.fetchone()
+    conn.close()
+    if result is not None:
+            print('Table has entries, skipping creation')
+            return True
+    else:
+        print('No such table "stocks". Creating it...')
+        create_stocks_table()
+
+def compare_stock_values(ticker, purchase_price):
+    output, current_price = stocks_yesterday(ticker, PolygonAPI_key)
+    if purchase_price is None:
+        print("Assistant failed to get purchase_price from user, checking if it's stored in the database")
+        purchase_price = get_purchase_price(ticker)
+        if purchase_price is None:
+            purchase_price_input = float(input(f"What was your purchase price for {ticker}? Please input only float values"))
+            add_purchase_price(ticker, purchase_price_input)
+            purchase_price = purchase_price_input
+
+            increase_percentage = calculate_increase(current_price, purchase_price)
+            output = f'The current price for {ticker} is {current_price}. You bought this stock at a value of {purchase_price}' + increase_percentage
+        else:
+            increase_percentage = calculate_increase(current_price, purchase_price)
+            output = f'The current price for {ticker} is {current_price}. You bought this stock at a value of {purchase_price}' + increase_percentage
+    else:
+        increase_percentage = calculate_increase(current_price, purchase_price)
+        output = f'The current price for {ticker} is {current_price}. You bought this stock at a value of {purchase_price}' + increase_percentage
+    return output
+
 def varda_dienas(name_day_file_id):
-    # Connect to the DB. If none exixts, it will be created
-    conn = sqlite3.connect("Assitant.db")
+    print('Entering varda_dienas')
+    # Connect to the DB. If none exists, it will be created
+    conn = sqlite3.connect("Assistant.db")
     cursor = conn.cursor()
 
     # A new table is created if none already exists
@@ -284,8 +368,10 @@ def varda_dienas(name_day_file_id):
             name TEXT
             )
     ''')
+    conn.commit()
     cursor.execute("SELECT COUNT(*) FROM name_days")
     row_count = cursor.fetchone()[0]
+    print('Row count variable: ' + str(row_count))
     if row_count > 0:
             print('Table has entries, skipping creation')
     else:
@@ -303,12 +389,18 @@ def varda_dienas(name_day_file_id):
     conn.close()
 
 def name_days_of_today():
-    conn = sqlite3.connect("Assitant.db")
+    conn = sqlite3.connect("Assistant.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM name_days")
-    row_count = cursor.fetchone()[0]
-    if row_count > 0:
-            print('Table has entries, skipping creation')
+    table_name = 'name_days'
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", (table_name,))
+    result = cursor.fetchone()
+    if result is not None:
+            print('Table exists, but may be empty')
+            cursor.execute(f"SELECT * FROM name_days WHERE date LIKE '{1}-{1}'")
+            rows = cursor.fetchall()
+            names = [row[1] for row in rows]
+            if len(names) >= 1:
+                print('Array has values: ' + ", ".join(map(str, names)))
     else:
         varda_dienas(name_day_file_id)
 
@@ -322,10 +414,10 @@ def name_days_of_today():
     output = "The people who celebrate their name day today are: " +  ', '.join(map(str, names))
     return output
 
-#Checks if there is an active run. If there is, a new querry is not generated
+#Checks if there is an active run. If there is, a new query is not generated
 if check_for_active_run(thread_id) == True:
     print("Active run found, finishing it!")
-else:#Message that the ai assistant will receive
+else:#Message that the user will answer to
     message = openai.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
@@ -400,8 +492,18 @@ if run.status == "requires_action":
                 print(f"name_days_of_today called")
                 output = name_days_of_today()
 
+            elif tool_call.function.name == "compare_stock_values": #Flow for the world_news() function
+                ticker = tool_params.get('ticker')
+                if tool_params.get('stock_purchase_value') is not None:
+                    purchase_price = float(tool_params.get('stock_purchase_value'))
+                else:
+                    purchase_price = None
+                print(f"compare_stock_values called, ticker: {ticker}, stock_purchase_value: {purchase_price}")
+                output = compare_stock_values(ticker, purchase_price)
+
             else:
                 print("Unknown function call")
+                output = None
             print(f"  Generated output: {output}")
 
             # submit the output back to assistant
