@@ -184,44 +184,6 @@ def current_weather(latitude, longitude, OpenWeatherAPIkey):
         print("API connection Failed!")
 
 #Returns fact of the day OR a random fact bassed on user input
-
-def varda_dienas(name_day_file_id):
-    # Connect to the DB. If none exixts, it will be created
-    conn = sqlite3.connect("Assitant.db")
-    cursor = conn.cursor()
-
-    # A new table is created if none already exists
-    cursor.execute('''
-            CREATE TABLE IF NOT EXISTS name_days (
-            date TEXT,
-            name TEXT
-            )
-    ''')
-    cursor.execute("SELECT COUNT(*) FROM name_days")
-    row_count = cursor.fetchone()[0]
-    if row_count > 0:
-            print('Table has entries, skipping creation')
-    else:
-        print('Table has no entries, creating table')
-        url = f'https://drive.google.com/uc?export=download&id={name_day_file_id}'
-        response = requests.get(url)
-        name_days = response.json()
-        if response.status_code==200:
-            # Insert each name with its corresponding date
-            for date, names in name_days.items():
-                for name in names:
-                    cursor.execute("INSERT INTO name_days (date, name) VALUES (?, ?)", (date, name))#'?, ?' prevents insertion attacks
-        # Commit the changes
-        conn.commit()
-
-        # cursor.execute("SELECT * FROM name_days;")
-        # rows = cursor.fetchall()
-        # for row in rows:
-        #     print(f"Date: {row[0]}, Name: {row[1]}")
-
-# Close the connection
-    conn.close()
-
 def random_fact(fact_type):
     params = {
         "fact_type": fact_type      # e.g., 'Day' or 'Random'
@@ -295,6 +257,50 @@ def stocks_yesterday(ticker, PolygonAPI_key):
     else:
         print("API connection Failed!")
         return None
+
+def create_stocks_table():
+    conn = sqlite3.connect('Assistant.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS stocks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            purchase_price REAL NOT NULL,
+            purchase_date DATE DEFAULT CURRENT_DATE
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def varda_dienas(name_day_file_id):
+    # Connect to the DB. If none exixts, it will be created
+    conn = sqlite3.connect("Assitant.db")
+    cursor = conn.cursor()
+
+    # A new table is created if none already exists
+    cursor.execute('''
+            CREATE TABLE IF NOT EXISTS name_days (
+            date TEXT,
+            name TEXT
+            )
+    ''')
+    cursor.execute("SELECT COUNT(*) FROM name_days")
+    row_count = cursor.fetchone()[0]
+    if row_count > 0:
+            print('Table has entries, skipping creation')
+    else:
+        print('Table has no entries, creating table')
+        url = f'https://drive.google.com/uc?export=download&id={name_day_file_id}'
+        response = requests.get(url)
+        name_days = response.json()
+        if response.status_code==200:
+            # Insert each name with its corresponding date
+            for date, names in name_days.items():
+                for name in names:
+                    cursor.execute("INSERT INTO name_days (date, name) VALUES (?, ?)", (date, name))#'?, ?' prevents insertion attacks
+        # Commit the changes
+        conn.commit()
+    conn.close()
 
 def name_days_of_today():
     conn = sqlite3.connect("Assitant.db")
