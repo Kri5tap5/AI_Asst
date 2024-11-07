@@ -1,3 +1,5 @@
 .env
 .env.test
 .mp3
+.db
+.idea
